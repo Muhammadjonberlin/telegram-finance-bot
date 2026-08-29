@@ -11,6 +11,7 @@ from telegram import (
     InlineKeyboardButton,
     InlineKeyboardMarkup
 )
+
 from telegram.ext import (
     Application,
     CommandHandler,
@@ -21,20 +22,20 @@ from telegram.ext import (
 )
 
 
-# =========================
+# =========================================================
 # SETTINGS
-# =========================
+# =========================================================
 
 TOKEN = os.getenv("BOT_TOKEN")
-
 DATA_FILE = "data.json"
 
 
-# =========================
+# =========================================================
 # CATEGORY DETECTION
-# =========================
+# =========================================================
 
 def detect_category(description):
+
     text = description.lower().strip()
 
     # 🚗 TRANSPORT
@@ -61,8 +62,7 @@ def detect_category(description):
         "shina",
         "avto",
         "avtomobil",
-        "mashina",
-        "moy"
+        "mashina"
     ]
 
     if any(word in text for word in transport_keywords):
@@ -87,7 +87,6 @@ def detect_category(description):
         "un",
         "shakar",
         "yog'",
-        "yog",
         "meva",
         "olma",
         "banan",
@@ -163,8 +162,7 @@ def detect_category(description):
         "analiz",
         "tibbiyot",
         "vitamin",
-        "stomatolog",
-        "tish doktori"
+        "stomatolog"
     ]
 
     if any(word in text for word in health_keywords):
@@ -239,8 +237,7 @@ def detect_category(description):
         "kommunalka",
         "remont",
         "mebel",
-        "uy uchun",
-        "gaz uchun"
+        "uy uchun"
     ]
 
     if any(word in text for word in home_keywords):
@@ -259,7 +256,6 @@ def detect_category(description):
         "poyabzal",
         "sumka",
         "iphone",
-        "telefon sotib",
         "noutbuk",
         "kompyuter",
         "quloqchin",
@@ -274,26 +270,28 @@ def detect_category(description):
         return "🛍 Xaridlar"
 
 
-    # 📦 BOSHQA
     return "📦 Boshqa"
 
 
-# =========================
-# DATA FUNCTIONS
-# =========================
+# =========================================================
+# DATA
+# =========================================================
 
 def load_data():
+
     if not os.path.exists(DATA_FILE):
         return []
 
     try:
         with open(DATA_FILE, "r", encoding="utf-8") as f:
             return json.load(f)
+
     except:
         return []
 
 
 def save_data(data):
+
     with open(DATA_FILE, "w", encoding="utf-8") as f:
         json.dump(
             data,
@@ -303,11 +301,12 @@ def save_data(data):
         )
 
 
-# =========================
+# =========================================================
 # MENU
-# =========================
+# =========================================================
 
 def menu():
+
     return ReplyKeyboardMarkup(
         [
             ["💰 Kirim", "💸 Xarajat"],
@@ -318,9 +317,9 @@ def menu():
     )
 
 
-# =========================
+# =========================================================
 # START
-# =========================
+# =========================================================
 
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
@@ -333,9 +332,9 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     )
 
 
-# =========================
+# =========================================================
 # INCOME
-# =========================
+# =========================================================
 
 async def income(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
@@ -343,39 +342,39 @@ async def income(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     await update.message.reply_text(
         "💰 Kirimni kiriting.\n\n"
-        "Misol:\n"
-        "5000000 Maosh\n\n"
-        "Yoki boshqa kirim:\n"
-        "1000000 Bonus"
+        "Masalan:\n"
+        "5000000 Maosh"
     )
 
 
-# =========================
+# =========================================================
 # EXPENSE
-# =========================
+# =========================================================
 
 async def expense(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     context.user_data["mode"] = "expense"
 
     await update.message.reply_text(
-        "💸 Xarajatni kiriting.\n\n"
-        "Kategoriya tanlash shart emas — bot o'zi aniqlaydi.\n\n"
-        "Masalan:\n"
+        "💸 Xarajatlarni kiriting.\n\n"
+        "Bittadan yozishingiz mumkin:\n"
+        "50000 ovqat\n\n"
+        "Yoki bir xabarda bir nechta:\n"
         "50000 ovqat\n"
         "120000 benzin\n"
-        "30000 avtobus\n"
-        "200000 kontrakt\n"
-        "150000 kommunal\n\n"
-        "🔄 Ketma-ket bir nechta xarajat yozishingiz mumkin."
+        "30000 avtobus\n\n"
+        "🔄 Xarajat rejimidan chiqish uchun menyudagi boshqa tugmani bosing."
     )
 
 
-# =========================
-# SAVE TRANSACTION
-# =========================
+# =========================================================
+# SAVE MULTIPLE TRANSACTIONS
+# =========================================================
 
-async def save_transaction(update: Update, context: ContextTypes.DEFAULT_TYPE):
+async def save_transactions(
+    update: Update,
+    context: ContextTypes.DEFAULT_TYPE
+):
 
     text = update.message.text.strip()
 
@@ -384,17 +383,40 @@ async def save_transaction(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if mode not in ["income", "expense"]:
         return
 
-    parts = text.split(maxsplit=1)
 
-    if len(parts) < 2:
-        await update.message.reply_text(
-            "❗ Iltimos, summa va izohni birga yozing.\n\n"
-            "Misol:\n"
-            "50000 ovqat"
-        )
-        return
+    # -----------------------------------------------------
+    # Bir xabarda bir nechta qatorni ajratamiz
+    # -----------------------------------------------------
 
-    try:
+    lines = [
+        line.strip()
+        for line in text.splitlines()
+        if line.strip()
+    ]
+
+
+    data = load_data()
+
+    saved = []
+    errors = []
+
+
+    # -----------------------------------------------------
+    # Har bir xarajatni alohida saqlash
+    # -----------------------------------------------------
+
+    for line in lines:
+
+        parts = line.split(maxsplit=1)
+
+
+        if len(parts) < 2:
+
+            errors.append(line)
+
+            continue
+
+
         amount_text = (
             parts[0]
             .replace(",", "")
@@ -402,81 +424,135 @@ async def save_transaction(update: Update, context: ContextTypes.DEFAULT_TYPE):
             .replace(" ", "")
         )
 
-        amount = float(amount_text)
 
-    except ValueError:
+        try:
+
+            amount = float(amount_text)
+
+        except ValueError:
+
+            errors.append(line)
+
+            continue
+
+
+        if amount <= 0:
+
+            errors.append(line)
+
+            continue
+
+
+        description = parts[1]
+
+
+        # Kategoriya
+        if mode == "expense":
+
+            category = detect_category(description)
+
+        else:
+
+            category = "💰 Kirim"
+
+
+        transaction = {
+
+            "user_id": update.effective_user.id,
+
+            "type": mode,
+
+            "amount": amount,
+
+            "description": description,
+
+            "category": category,
+
+            "date": datetime.now().strftime(
+                "%Y-%m-%d %H:%M:%S"
+            )
+        }
+
+
+        data.append(transaction)
+
+        saved.append(transaction)
+
+
+    # -----------------------------------------------------
+    # Saqlash
+    # -----------------------------------------------------
+
+    if saved:
+
+        save_data(data)
+
+
+    # -----------------------------------------------------
+    # Javob
+    # -----------------------------------------------------
+
+    if not saved and errors:
 
         await update.message.reply_text(
-            "❗ Summa noto'g'ri.\n\n"
-            "Misol:\n"
-            "50000 ovqat"
+            "❗ Xarajatni quyidagi formatda yozing:\n\n"
+            "50000 ovqat\n"
+            "120000 benzin"
         )
-        return
 
-    description = parts[1]
-
-    if amount <= 0:
-        await update.message.reply_text(
-            "❗ Summa 0 dan katta bo'lishi kerak."
-        )
         return
 
 
-    # Kategoriya
-    if mode == "expense":
-        category = detect_category(description)
-    else:
-        category = "💰 Kirim"
+    response = ""
 
 
-    # Data
-    data = load_data()
+    if saved:
 
-    transaction = {
-        "user_id": update.effective_user.id,
-        "type": mode,
-        "amount": amount,
-        "description": description,
-        "category": category,
-        "date": datetime.now().strftime(
-            "%Y-%m-%d %H:%M:%S"
-        )
-    }
-
-    data.append(transaction)
-
-    save_data(data)
+        response += "✅ SAQLANDI:\n\n"
 
 
-    # Response
-    if mode == "income":
+        for item in saved:
 
-        text_response = (
-            "✅ Kirim saqlandi!\n\n"
-            f"💰 {amount:,.0f} so'm\n"
-            f"📝 {description}"
+            if item["type"] == "expense":
+
+                response += (
+                    f"{item['category']}\n"
+                    f"💸 {item['amount']:,.0f} so'm\n"
+                    f"📝 {item['description']}\n\n"
+                )
+
+            else:
+
+                response += (
+                    "💰 Kirim\n"
+                    f"{item['amount']:,.0f} so'm\n"
+                    f"📝 {item['description']}\n\n"
+                )
+
+
+    if errors:
+
+        response += (
+            "⚠️ Saqlanmagan yozuvlar:\n\n"
         )
 
-    else:
+        for error in errors:
 
-        text_response = (
-            "✅ Xarajat saqlandi!\n\n"
-            f"{category}\n"
-            f"💸 {amount:,.0f} so'm\n"
-            f"📝 {description}\n\n"
-            "Yana xarajat yozishingiz mumkin."
-        )
+            response += f"❌ {error}\n"
 
+
+    # Muhim:
+    # mode o'chirilmaydi!
+    # Shuning uchun keyingi xarajatni yana yozish mumkin.
 
     await update.message.reply_text(
-        text_response,
-        reply_markup=menu()
+        response
     )
 
 
-# =========================
+# =========================================================
 # MONTHLY REPORT
-# =========================
+# =========================================================
 
 async def report(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
@@ -550,12 +626,12 @@ async def report(update: Update, context: ContextTypes.DEFAULT_TYPE):
             )
 
 
-        top_category = sorted_categories[0]
+        top = sorted_categories[0]
 
         text += (
             "\n🏆 Eng ko'p xarajat:\n"
-            f"{top_category[0]}\n"
-            f"{top_category[1]:,.0f} so'm"
+            f"{top[0]}\n"
+            f"{top[1]:,.0f} so'm"
         )
 
     else:
@@ -569,9 +645,9 @@ async def report(update: Update, context: ContextTypes.DEFAULT_TYPE):
     )
 
 
-# =========================
+# =========================================================
 # HISTORY
-# =========================
+# =========================================================
 
 async def history(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
@@ -601,22 +677,19 @@ async def history(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
         if x["type"] == "income":
 
-            sign = "+"
             emoji = "💰"
-            category = "Kirim"
+            sign = "+"
 
         else:
 
-            sign = "-"
             emoji = x["category"]
-            category = x["category"]
+            sign = "-"
 
 
         text += (
             f"{emoji}\n"
             f"{sign}{x['amount']:,.0f} so'm\n"
             f"📝 {x['description']}\n"
-            f"📂 {category}\n"
             f"🕐 {x['date']}\n\n"
         )
 
@@ -627,22 +700,24 @@ async def history(update: Update, context: ContextTypes.DEFAULT_TYPE):
     )
 
 
-# =========================
+# =========================================================
 # DELETE LAST
-# =========================
+# =========================================================
 
 async def delete_last(
     update: Update,
     context: ContextTypes.DEFAULT_TYPE
 ):
 
-    data = [
-        x for x in load_data()
+    data = load_data()
+
+    user_data = [
+        x for x in data
         if x["user_id"] == update.effective_user.id
     ]
 
 
-    if not data:
+    if not user_data:
 
         await update.message.reply_text(
             "🗑 O'chirish uchun yozuv yo'q.",
@@ -652,7 +727,7 @@ async def delete_last(
         return
 
 
-    last = data[-1]
+    last = user_data[-1]
 
 
     keyboard = InlineKeyboardMarkup(
@@ -672,7 +747,7 @@ async def delete_last(
 
 
     await update.message.reply_text(
-        "🗑 Oxirgi xarajatni o'chiraymi?\n\n"
+        "🗑 Oxirgi yozuvni o'chiraymi?\n\n"
         f"💸 {last['amount']:,.0f} so'm\n"
         f"📝 {last['description']}\n"
         f"📂 {last['category']}",
@@ -680,9 +755,9 @@ async def delete_last(
     )
 
 
-# =========================
+# =========================================================
 # CALLBACK
-# =========================
+# =========================================================
 
 async def callback(
     update: Update,
@@ -711,7 +786,8 @@ async def callback(
 
 
         indexes = [
-            i for i, item in enumerate(data)
+            i
+            for i, item in enumerate(data)
             if item["user_id"] == user_id
         ]
 
@@ -719,7 +795,7 @@ async def callback(
         if not indexes:
 
             await query.edit_message_text(
-                "❗ O'chirish uchun yozuv topilmadi."
+                "❗ Yozuv topilmadi."
             )
 
             return
@@ -739,9 +815,9 @@ async def callback(
         )
 
 
-# =========================
+# =========================================================
 # MESSAGE HANDLER
-# =========================
+# =========================================================
 
 async def message_handler(
     update: Update,
@@ -751,47 +827,51 @@ async def message_handler(
     text = update.message.text
 
 
+    # Menyu tugmalari
     if text == "💰 Kirim":
 
         await income(update, context)
-
         return
 
 
     if text == "💸 Xarajat":
 
         await expense(update, context)
-
         return
 
 
     if text == "📊 Hisobot":
 
-        await report(update, context)
+        # Rejimni yopamiz
+        context.user_data.clear()
 
+        await report(update, context)
         return
 
 
     if text == "📜 Tarix":
 
-        await history(update, context)
+        context.user_data.clear()
 
+        await history(update, context)
         return
 
 
     if text == "🗑 O'chirish":
 
-        await delete_last(update, context)
+        context.user_data.clear()
 
+        await delete_last(update, context)
         return
 
 
+    # Kirim yoki xarajat
     if context.user_data.get("mode") in [
         "income",
         "expense"
     ]:
 
-        await save_transaction(
+        await save_transactions(
             update,
             context
         )
@@ -805,9 +885,9 @@ async def message_handler(
     )
 
 
-# =========================
-# KEEP RENDER WEB SERVICE ALIVE
-# =========================
+# =========================================================
+# RENDER HEALTH SERVER
+# =========================================================
 
 class HealthHandler(BaseHTTPRequestHandler):
 
@@ -826,7 +906,9 @@ class HealthHandler(BaseHTTPRequestHandler):
             b"Finance Bot is running!"
         )
 
+
     def log_message(self, format, *args):
+
         return
 
 
@@ -839,17 +921,19 @@ def run_health_server():
         )
     )
 
+
     server = HTTPServer(
         ("0.0.0.0", port),
         HealthHandler
     )
 
+
     server.serve_forever()
 
 
-# =========================
-# START BOT
-# =========================
+# =========================================================
+# START
+# =========================================================
 
 if not TOKEN:
 
