@@ -342,7 +342,7 @@ async def save_transactions(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if mode not in ["income", "expense"]:
         return
 
-    lines = text.splitlines()
+    lines = re.split(r",|\n", text)
 
     saved = []
 
