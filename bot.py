@@ -1,5 +1,7 @@
 import os
 import re
+import threading
+from http.server import BaseHTTPRequestHandler, HTTPServer
 import psycopg2
 from datetime import datetime
 from collections import defaultdict
@@ -15,6 +17,35 @@ from telegram.ext import (
 
 TOKEN = os.getenv("BOT_TOKEN")
 DATABASE_URL = os.getenv("DATABASE_URL")
+
+
+# =========================
+# RENDER HEALTH SERVER
+# =========================
+
+class HealthHandler(BaseHTTPRequestHandler):
+
+    def do_GET(self):
+        self.send_response(200)
+        self.send_header("Content-type", "text/plain")
+        self.end_headers()
+        self.wfile.write(b"OK")
+
+    def log_message(self, format, *args):
+        pass
+
+
+def run_health_server():
+    port = int(os.environ.get("PORT", 10000))
+
+    server = HTTPServer(
+        ("0.0.0.0", port),
+        HealthHandler
+    )
+
+    print(f"HTTP SERVER ISHGA TUSHDI: {port}")
+
+    server.serve_forever()
 
 
 # =========================
@@ -80,13 +111,9 @@ CATEGORIES = {
 
 
 def detect_category(text):
-    """
-    Xarajat matniga qarab kategoriyani avtomatik aniqlaydi.
-    """
 
     text = text.lower()
 
-    # Oziq-ovqat
     food_words = [
         "ovqat",
         "go'sht",
@@ -110,7 +137,6 @@ def detect_category(text):
         "ichimlik",
     ]
 
-    # Transport
     transport_words = [
         "gas",
         "gaz",
@@ -129,7 +155,6 @@ def detect_category(text):
         "yol",
     ]
 
-    # Uy-joy
     home_words = [
         "kommunal",
         "svet",
@@ -147,7 +172,6 @@ def detect_category(text):
         "uy joy",
     ]
 
-    # Ta'lim
     education_words = [
         "kontrakt",
         "universitet",
@@ -162,7 +186,6 @@ def detect_category(text):
         "repetitor",
     ]
 
-    # Kafe
     cafe_words = [
         "kafe",
         "cafe",
@@ -174,7 +197,6 @@ def detect_category(text):
         "kofe",
     ]
 
-    # Sog'liq
     health_words = [
         "dori",
         "dorixona",
@@ -186,7 +208,6 @@ def detect_category(text):
         "apteka",
     ]
 
-    # Aloqa
     phone_words = [
         "telefon",
         "sim karta",
@@ -196,7 +217,6 @@ def detect_category(text):
         "mobil",
     ]
 
-    # Kredit
     credit_words = [
         "kredit",
         "qarz",
@@ -204,7 +224,6 @@ def detect_category(text):
         "bank to‘lovi",
     ]
 
-    # Xaridlar
     shopping_words = [
         "kiyim",
         "oyoq kiyim",
@@ -266,6 +285,7 @@ def menu():
 # =========================
 
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
+
     context.user_data.clear()
 
     await update.message.reply_text(
@@ -310,7 +330,7 @@ async def expense(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 
 # =========================
-# SAVE MULTIPLE EXPENSES
+# SAVE TRANSACTIONS
 # =========================
 
 async def save_transactions(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -333,7 +353,6 @@ async def save_transactions(update: Update, context: ContextTypes.DEFAULT_TYPE):
         if not line:
             continue
 
-        # Summa + izoh
         match = re.match(
             r"^([\d\s,\.]+)\s+(.+)$",
             line
@@ -649,6 +668,12 @@ def main():
 
     if not DATABASE_URL:
         raise ValueError("DATABASE_URL topilmadi!")
+
+    # Render Web Service uchun HTTP server
+    threading.Thread(
+        target=run_health_server,
+        daemon=True
+    ).start()
 
     init_db()
 
