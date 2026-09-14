@@ -97,7 +97,7 @@ def add_transaction(user_id, tx_type, amount, description, category):
 # =========================
 
 CATEGORIES = {
-    "food": "🍔 Oziq-ovqat",
+    "food": "🛒 Bozor",
     "transport": "🚗 Transport",
     "home": "🏠 Uy-joy",
     "shopping": "🛍 Xaridlar",
@@ -110,32 +110,93 @@ CATEGORIES = {
 }
 
 
+# =========================
+# CATEGORY DETECTION
+# =========================
+
 def detect_category(text):
 
     text = text.lower()
 
+    # =========================
+    # BOZOR / OZIQA-OVQAT
+    # =========================
+
     food_words = [
         "ovqat",
+        "oziq",
+        "oziq-ovqat",
+        "bozor",
+
         "go'sht",
         "gosht",
+        "mol go'shti",
+        "mol goshti",
+        "qo'y go'shti",
+        "qoy goshti",
+        "tovuq",
+        "baliq",
+
         "suv",
-        "sabzavot",
-        "meva",
         "non",
         "sut",
+        "qatiq",
         "pishloq",
+        "tvorog",
+        "qaymoq",
+        "smetana",
+
         "tuxum",
         "guruch",
+        "makaron",
+        "un",
+        "shakar",
+        "tuz",
+        "yog'",
+        "yog‘",
+        "moy",
+
         "kartoshka",
+        "piyoz",
+        "sabzi",
         "pomidor",
         "bodring",
+        "karam",
+        "qalampir",
+        "baqlajon",
+        "lavlagi",
+        "sabzavot",
+
+        "meva",
+        "olma",
+        "banan",
+        "uzum",
+        "apelsin",
+        "mandarin",
+        "limon",
+        "shaftoli",
+        "o'rik",
+        "orik",
+        "anor",
+        "tarvuz",
+        "qovun",
+
         "shirinlik",
         "shokolad",
+        "pechenye",
+        "konfet",
+        "tort",
+        "muzqaymoq",
         "kolbasa",
-        "mahsulot",
-        "oziq",
+        "sosiska",
+        "konserva",
         "ichimlik",
+        "choy",
     ]
+
+    # =========================
+    # TRANSPORT
+    # =========================
 
     transport_words = [
         "gas",
@@ -155,6 +216,10 @@ def detect_category(text):
         "yol",
     ]
 
+    # =========================
+    # UY-JOY
+    # =========================
+
     home_words = [
         "kommunal",
         "svet",
@@ -172,6 +237,10 @@ def detect_category(text):
         "uy joy",
     ]
 
+    # =========================
+    # TA'LIM
+    # =========================
+
     education_words = [
         "kontrakt",
         "universitet",
@@ -186,6 +255,10 @@ def detect_category(text):
         "repetitor",
     ]
 
+    # =========================
+    # KAFE
+    # =========================
+
     cafe_words = [
         "kafe",
         "cafe",
@@ -196,6 +269,10 @@ def detect_category(text):
         "coffee",
         "kofe",
     ]
+
+    # =========================
+    # SOG'LIQ
+    # =========================
 
     health_words = [
         "dori",
@@ -208,6 +285,10 @@ def detect_category(text):
         "apteka",
     ]
 
+    # =========================
+    # ALOQA
+    # =========================
+
     phone_words = [
         "telefon",
         "sim karta",
@@ -217,12 +298,20 @@ def detect_category(text):
         "mobil",
     ]
 
+    # =========================
+    # KREDIT
+    # =========================
+
     credit_words = [
         "kredit",
         "qarz",
         "bank to'lovi",
         "bank to‘lovi",
     ]
+
+    # =========================
+    # XARIDLAR
+    # =========================
 
     shopping_words = [
         "kiyim",
@@ -234,6 +323,10 @@ def detect_category(text):
         "sovg'a",
         "sovga",
     ]
+
+    # =========================
+    # CATEGORY PRIORITY
+    # =========================
 
     if any(word in text for word in food_words):
         return CATEGORIES["food"]
@@ -342,7 +435,7 @@ async def save_transactions(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if mode not in ["income", "expense"]:
         return
 
-    lines = re.split(r",|\n", text)
+    lines = text.splitlines()
 
     saved = []
 
@@ -516,7 +609,7 @@ async def report(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 
 # =========================
-# HISTORY
+# HISTORY - BY CATEGORY
 # =========================
 
 async def history(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -527,11 +620,11 @@ async def history(update: Update, context: ContextTypes.DEFAULT_TYPE):
     cur = conn.cursor()
 
     cur.execute("""
-        SELECT type, amount, description, category, created_at
+        SELECT amount, description, category, created_at
         FROM transactions
         WHERE user_id = %s
-        ORDER BY id DESC
-        LIMIT 10
+        AND type = 'expense'
+        ORDER BY category, created_at DESC
     """, (uid,))
 
     rows = cur.fetchall()
@@ -542,34 +635,93 @@ async def history(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if not rows:
 
         await update.message.reply_text(
-            "📜 Tarix bo'sh.",
+            "📜 Xarajatlar tarixi bo'sh.",
             reply_markup=menu()
         )
 
         return
 
-    text = "📜 OXIRGI 10 TA\n\n"
+    # Kategoriyalar bo'yicha guruhlash
+    grouped = defaultdict(list)
 
-    for tx_type, amount, description, category, created_at in rows:
-
-        if tx_type == "income":
-            sign = "+"
-            icon = "💰"
-        else:
-            sign = "-"
-            icon = category
-
-        text += (
-            f"{icon}\n"
-            f"{sign}{float(amount):,.0f} so'm\n"
-            f"📝 {description}\n"
-            f"📅 {created_at.strftime('%Y-%m-%d %H:%M')}\n\n"
+    for amount, description, category, created_at in rows:
+        grouped[category].append(
+            (float(amount), description, created_at)
         )
 
-    await update.message.reply_text(
-        text,
-        reply_markup=menu()
+    text = "📜 XARAJATLAR TARIXI\n\n"
+
+    # Har bir kategoriya
+    for category, items in grouped.items():
+
+        category_total = sum(
+            amount for amount, description, created_at in items
+        )
+
+        text += (
+            f"{category}\n"
+            f"━━━━━━━━━━━━━━\n"
+        )
+
+        for amount, description, created_at in items:
+
+            text += (
+                f"• {amount:,.0f} so'm — {description}\n"
+                f"  📅 {created_at.strftime('%Y-%m-%d %H:%M')}\n"
+            )
+
+        text += (
+            f"Jami: {category_total:,.0f} so'm\n\n"
+        )
+
+    # Umumiy jami
+    total = sum(
+        amount
+        for items in grouped.values()
+        for amount, description, created_at in items
     )
+
+    text += (
+        "━━━━━━━━━━━━━━\n"
+        f"💸 UMUMIY XARAJAT: {total:,.0f} so'm"
+    )
+
+    # Telegram xabar limiti uchun bo'lib yuborish
+    max_length = 4000
+
+    if len(text) <= max_length:
+
+        await update.message.reply_text(
+            text,
+            reply_markup=menu()
+        )
+
+    else:
+
+        parts = []
+
+        while len(text) > max_length:
+
+            cut = text.rfind("\n", 0, max_length)
+
+            if cut == -1:
+                cut = max_length
+
+            parts.append(text[:cut])
+            text = text[cut:].lstrip()
+
+        if text:
+            parts.append(text)
+
+        for i, part in enumerate(parts):
+
+            if i == len(parts) - 1:
+                await update.message.reply_text(
+                    part,
+                    reply_markup=menu()
+                )
+            else:
+                await update.message.reply_text(part)
 
 
 # =========================
