@@ -2,10 +2,10 @@ import os
 import re
 import threading
 from http.server import BaseHTTPRequestHandler, HTTPServer
-import psycopg2
-from datetime import datetime
 from collections import defaultdict
+from datetime import datetime
 
+import psycopg2
 from telegram import Update, ReplyKeyboardMarkup
 from telegram.ext import (
     Application,
@@ -73,11 +73,103 @@ def init_db():
     """)
 
     conn.commit()
+
+    # ==========================================
+    # ESKI OZIQ-OVQAT XARAJATLARINI BOZORGA
+    # OTKAZISH
+    # ==========================================
+
+    old_food_words = [
+        "suv",
+        "non",
+        "go'sht",
+        "gosht",
+        "mol go'shti",
+        "mol goshti",
+        "qo'y go'shti",
+        "qoy goshti",
+        "tovuq",
+        "baliq",
+        "sut",
+        "qatiq",
+        "pishloq",
+        "tvorog",
+        "qaymoq",
+        "smetana",
+        "tuxum",
+        "guruch",
+        "makaron",
+        "un",
+        "shakar",
+        "tuz",
+        "yog'",
+        "yog‘",
+        "moy",
+        "kartoshka",
+        "piyoz",
+        "sabzi",
+        "pomidor",
+        "bodring",
+        "karam",
+        "qalampir",
+        "baqlajon",
+        "lavlagi",
+        "sabzavot",
+        "meva",
+        "olma",
+        "banan",
+        "uzum",
+        "apelsin",
+        "mandarin",
+        "limon",
+        "shaftoli",
+        "o'rik",
+        "orik",
+        "anor",
+        "tarvuz",
+        "qovun",
+        "shirinlik",
+        "shokolad",
+        "pechenye",
+        "konfet",
+        "tort",
+        "muzqaymoq",
+        "kolbasa",
+        "sosiska",
+        "konserva",
+        "ichimlik",
+        "choy",
+    ]
+
+    for word in old_food_words:
+
+        cur.execute("""
+            UPDATE transactions
+            SET category = '🛒 Bozor'
+            WHERE type = 'expense'
+            AND LOWER(description) LIKE %s
+            AND LOWER(description) NOT LIKE %s
+        """, (
+            f"%{word}%",
+            "%to'lovi%"
+        ))
+
+    # Eski "ovqat" yozuvlari Oziq-ovqat bo'lib qoladi
+    cur.execute("""
+        UPDATE transactions
+        SET category = '🍽️ Oziq-ovqat'
+        WHERE type = 'expense'
+        AND LOWER(description) LIKE '%ovqat%'
+    """)
+
+    conn.commit()
+
     cur.close()
     conn.close()
 
 
 def add_transaction(user_id, tx_type, amount, description, category):
+
     conn = get_db()
     cur = conn.cursor()
 
@@ -85,9 +177,16 @@ def add_transaction(user_id, tx_type, amount, description, category):
         INSERT INTO transactions
         (user_id, type, amount, description, category)
         VALUES (%s, %s, %s, %s, %s)
-    """, (user_id, tx_type, amount, description, category))
+    """, (
+        user_id,
+        tx_type,
+        amount,
+        description,
+        category
+    ))
 
     conn.commit()
+
     cur.close()
     conn.close()
 
@@ -97,7 +196,8 @@ def add_transaction(user_id, tx_type, amount, description, category):
 # =========================
 
 CATEGORIES = {
-    "food": "🛒 Bozor",
+    "market": "🛒 Bozor",
+    "food": "🍽️ Oziq-ovqat",
     "transport": "🚗 Transport",
     "home": "🏠 Uy-joy",
     "shopping": "🛍 Xaridlar",
@@ -116,16 +216,48 @@ CATEGORIES = {
 
 def detect_category(text):
 
-    text = text.lower()
+    text = text.lower().strip()
 
-    # =========================
-    # BOZOR / OZIQA-OVQAT
-    # =========================
+    # ==========================================
+    # 1. UY-JOYGA OID ANIQ IBORALAR
+    # AVVAL TEKSHIRILADI
+    # ==========================================
 
-    food_words = [
-        "ovqat",
-        "oziq",
-        "oziq-ovqat",
+    home_words = [
+        "kommunal",
+        "svet",
+        "elektr",
+        "elektr toki",
+        "gaz to'lovi",
+        "gaz to‘lovi",
+        "suv to'lovi",
+        "suv to‘lovi",
+        "ijara",
+        "kvartira",
+        "uy-joy",
+        "uy joy",
+    ]
+
+    if any(word in text for word in home_words):
+        return CATEGORIES["home"]
+
+
+    # ==========================================
+    # 2. FAQAT "OVQAT" → OZIQ-OVQAT
+    # ==========================================
+
+    if re.search(r"\bovqat\b", text):
+        return CATEGORIES["food"]
+
+    if re.search(r"\boziq-ovqat\b", text):
+        return CATEGORIES["food"]
+
+
+    # ==========================================
+    # 3. BOZOR
+    # ==========================================
+
+    market_words = [
         "bozor",
 
         "go'sht",
@@ -194,9 +326,13 @@ def detect_category(text):
         "choy",
     ]
 
-    # =========================
-    # TRANSPORT
-    # =========================
+    if any(word in text for word in market_words):
+        return CATEGORIES["market"]
+
+
+    # ==========================================
+    # 4. TRANSPORT
+    # ==========================================
 
     transport_words = [
         "gas",
@@ -216,30 +352,13 @@ def detect_category(text):
         "yol",
     ]
 
-    # =========================
-    # UY-JOY
-    # =========================
+    if any(word in text for word in transport_words):
+        return CATEGORIES["transport"]
 
-    home_words = [
-        "kommunal",
-        "svet",
-        "elektr",
-        "elektr toki",
-        "gaz to'lovi",
-        "gaz to‘lovi",
-        "suv to'lovi",
-        "suv to‘lovi",
-        "ijara",
-        "kvartira",
-        "uy",
-        "internet",
-        "uy-joy",
-        "uy joy",
-    ]
 
-    # =========================
-    # TA'LIM
-    # =========================
+    # ==========================================
+    # 5. TA'LIM
+    # ==========================================
 
     education_words = [
         "kontrakt",
@@ -255,9 +374,13 @@ def detect_category(text):
         "repetitor",
     ]
 
-    # =========================
-    # KAFE
-    # =========================
+    if any(word in text for word in education_words):
+        return CATEGORIES["education"]
+
+
+    # ==========================================
+    # 6. KAFE
+    # ==========================================
 
     cafe_words = [
         "kafe",
@@ -270,9 +393,13 @@ def detect_category(text):
         "kofe",
     ]
 
-    # =========================
-    # SOG'LIQ
-    # =========================
+    if any(word in text for word in cafe_words):
+        return CATEGORIES["cafe"]
+
+
+    # ==========================================
+    # 7. SOG'LIQ
+    # ==========================================
 
     health_words = [
         "dori",
@@ -285,9 +412,13 @@ def detect_category(text):
         "apteka",
     ]
 
-    # =========================
-    # ALOQA
-    # =========================
+    if any(word in text for word in health_words):
+        return CATEGORIES["health"]
+
+
+    # ==========================================
+    # 8. ALOQA
+    # ==========================================
 
     phone_words = [
         "telefon",
@@ -298,9 +429,13 @@ def detect_category(text):
         "mobil",
     ]
 
-    # =========================
-    # KREDIT
-    # =========================
+    if any(word in text for word in phone_words):
+        return CATEGORIES["phone"]
+
+
+    # ==========================================
+    # 9. KREDIT
+    # ==========================================
 
     credit_words = [
         "kredit",
@@ -309,9 +444,13 @@ def detect_category(text):
         "bank to‘lovi",
     ]
 
-    # =========================
-    # XARIDLAR
-    # =========================
+    if any(word in text for word in credit_words):
+        return CATEGORIES["credit"]
+
+
+    # ==========================================
+    # 10. XARIDLAR
+    # ==========================================
 
     shopping_words = [
         "kiyim",
@@ -324,36 +463,13 @@ def detect_category(text):
         "sovga",
     ]
 
-    # =========================
-    # CATEGORY PRIORITY
-    # =========================
-
-    if any(word in text for word in food_words):
-        return CATEGORIES["food"]
-
-    if any(word in text for word in transport_words):
-        return CATEGORIES["transport"]
-
-    if any(word in text for word in home_words):
-        return CATEGORIES["home"]
-
-    if any(word in text for word in education_words):
-        return CATEGORIES["education"]
-
-    if any(word in text for word in cafe_words):
-        return CATEGORIES["cafe"]
-
-    if any(word in text for word in health_words):
-        return CATEGORIES["health"]
-
-    if any(word in text for word in phone_words):
-        return CATEGORIES["phone"]
-
-    if any(word in text for word in credit_words):
-        return CATEGORIES["credit"]
-
     if any(word in text for word in shopping_words):
         return CATEGORIES["shopping"]
+
+
+    # ==========================================
+    # 11. BOSHQА
+    # ==========================================
 
     return CATEGORIES["other"]
 
@@ -363,6 +479,7 @@ def detect_category(text):
 # =========================
 
 def menu():
+
     return ReplyKeyboardMarkup(
         [
             ["💰 Kirim", "💸 Xarajat"],
@@ -458,6 +575,7 @@ async def save_transactions(update: Update, context: ContextTypes.DEFAULT_TYPE):
         description = match.group(2).strip()
 
         try:
+
             amount_text = (
                 amount_text
                 .replace(",", "")
@@ -564,9 +682,11 @@ async def report(update: Update, context: ContextTypes.DEFAULT_TYPE):
         amount = float(amount)
 
         if tx_type == "income":
+
             income_total += amount
 
         else:
+
             expense_total += amount
             categories[category] += amount
 
@@ -590,16 +710,25 @@ async def report(update: Update, context: ContextTypes.DEFAULT_TYPE):
             key=lambda x: x[1],
             reverse=True
         ):
-            text += f"{category}: {amount:,.0f} so'm\n"
 
-        top = max(categories, key=categories.get)
+            text += (
+                f"{category}: "
+                f"{amount:,.0f} so'm\n"
+            )
+
+        top = max(
+            categories,
+            key=categories.get
+        )
 
         text += (
             f"\n🏆 Eng ko'p xarajat:\n"
-            f"{top} — {categories[top]:,.0f} so'm"
+            f"{top} — "
+            f"{categories[top]:,.0f} so'm"
         )
 
     else:
+
         text += "Xarajat yo'q."
 
     await update.message.reply_text(
@@ -609,7 +738,7 @@ async def report(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 
 # =========================
-# HISTORY - BY CATEGORY
+# HISTORY
 # =========================
 
 async def history(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -641,21 +770,26 @@ async def history(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
         return
 
-    # Kategoriyalar bo'yicha guruhlash
     grouped = defaultdict(list)
 
     for amount, description, category, created_at in rows:
+
         grouped[category].append(
-            (float(amount), description, created_at)
+            (
+                float(amount),
+                description,
+                created_at
+            )
         )
 
     text = "📜 XARAJATLAR TARIXI\n\n"
 
-    # Har bir kategoriya
     for category, items in grouped.items():
 
         category_total = sum(
-            amount for amount, description, created_at in items
+            amount
+            for amount, description, created_at
+            in items
         )
 
         text += (
@@ -666,15 +800,17 @@ async def history(update: Update, context: ContextTypes.DEFAULT_TYPE):
         for amount, description, created_at in items:
 
             text += (
-                f"• {amount:,.0f} so'm — {description}\n"
-                f"  📅 {created_at.strftime('%Y-%m-%d %H:%M')}\n"
+                f"• {amount:,.0f} so'm — "
+                f"{description}\n"
+                f"  📅 "
+                f"{created_at.strftime('%Y-%m-%d %H:%M')}\n"
             )
 
         text += (
-            f"Jami: {category_total:,.0f} so'm\n\n"
+            f"Jami: "
+            f"{category_total:,.0f} so'm\n\n"
         )
 
-    # Umumiy jami
     total = sum(
         amount
         for items in grouped.values()
@@ -683,10 +819,10 @@ async def history(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     text += (
         "━━━━━━━━━━━━━━\n"
-        f"💸 UMUMIY XARAJAT: {total:,.0f} so'm"
+        f"💸 UMUMIY XARAJAT: "
+        f"{total:,.0f} so'm"
     )
 
-    # Telegram xabar limiti uchun bo'lib yuborish
     max_length = 4000
 
     if len(text) <= max_length:
@@ -702,7 +838,11 @@ async def history(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
         while len(text) > max_length:
 
-            cut = text.rfind("\n", 0, max_length)
+            cut = text.rfind(
+                "\n",
+                0,
+                max_length
+            )
 
             if cut == -1:
                 cut = max_length
@@ -716,11 +856,14 @@ async def history(update: Update, context: ContextTypes.DEFAULT_TYPE):
         for i, part in enumerate(parts):
 
             if i == len(parts) - 1:
+
                 await update.message.reply_text(
                     part,
                     reply_markup=menu()
                 )
+
             else:
+
                 await update.message.reply_text(part)
 
 
@@ -781,7 +924,10 @@ async def delete_last(update: Update, context: ContextTypes.DEFAULT_TYPE):
 # MESSAGE HANDLER
 # =========================
 
-async def message_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
+async def message_handler(
+    update: Update,
+    context: ContextTypes.DEFAULT_TYPE
+):
 
     text = update.message.text
 
@@ -800,8 +946,15 @@ async def message_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if text == "🗑 O'chirish":
         return await delete_last(update, context)
 
-    if context.user_data.get("mode") in ["income", "expense"]:
-        return await save_transactions(update, context)
+    if context.user_data.get("mode") in [
+        "income",
+        "expense"
+    ]:
+
+        return await save_transactions(
+            update,
+            context
+        )
 
     await update.message.reply_text(
         "Iltimos, menyudan tanlang yoki /start bosing.",
@@ -816,12 +969,15 @@ async def message_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
 def main():
 
     if not TOKEN:
-        raise ValueError("BOT_TOKEN topilmadi!")
+        raise ValueError(
+            "BOT_TOKEN topilmadi!"
+        )
 
     if not DATABASE_URL:
-        raise ValueError("DATABASE_URL topilmadi!")
+        raise ValueError(
+            "DATABASE_URL topilmadi!"
+        )
 
-    # Render Web Service uchun HTTP server
     threading.Thread(
         target=run_health_server,
         daemon=True
