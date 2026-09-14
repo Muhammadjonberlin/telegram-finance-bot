@@ -56,172 +56,12 @@ def get_db():
     return psycopg2.connect(DATABASE_URL)
 
 
-def init_db():
-    conn = get_db()
-    cur = conn.cursor()
-
-    cur.execute("""
-        CREATE TABLE IF NOT EXISTS transactions (
-            id SERIAL PRIMARY KEY,
-            user_id BIGINT NOT NULL,
-            type VARCHAR(20) NOT NULL,
-            amount NUMERIC(15,2) NOT NULL,
-            description TEXT NOT NULL,
-            category TEXT NOT NULL,
-            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-        )
-    """)
-
-    conn.commit()
-
-    # ==========================================
-    # ESKI OZIQ-OVQAT XARAJATLARINI BOZORGA
-    # OTKAZISH
-    # ==========================================
-
-    old_food_words = [
-        "suv",
-        "non",
-        "go'sht",
-        "gosht",
-        "mol go'shti",
-        "mol goshti",
-        "qo'y go'shti",
-        "qoy goshti",
-        "tovuq",
-        "baliq",
-        "sut",
-        "qatiq",
-        "pishloq",
-        "tvorog",
-        "qaymoq",
-        "smetana",
-        "tuxum",
-        "guruch",
-        "makaron",
-        "un",
-        "shakar",
-        "tuz",
-        "yog'",
-        "yog‘",
-        "moy",
-        "kartoshka",
-        "piyoz",
-        "sabzi",
-        "pomidor",
-        "bodring",
-        "karam",
-        "qalampir",
-        "baqlajon",
-        "lavlagi",
-        "sabzavot",
-        "meva",
-        "olma",
-        "banan",
-        "uzum",
-        "apelsin",
-        "mandarin",
-        "limon",
-        "shaftoli",
-        "o'rik",
-        "orik",
-        "anor",
-        "tarvuz",
-        "qovun",
-        "shirinlik",
-        "shokolad",
-        "pechenye",
-        "konfet",
-        "tort",
-        "muzqaymoq",
-        "kolbasa",
-        "sosiska",
-        "konserva",
-        "ichimlik",
-        "choy",
-    ]
-
-    for word in old_food_words:
-
-        cur.execute("""
-            UPDATE transactions
-            SET category = '🛒 Bozor'
-            WHERE type = 'expense'
-            AND LOWER(description) LIKE %s
-            AND LOWER(description) NOT LIKE %s
-        """, (
-            f"%{word}%",
-            "%to'lovi%"
-        ))
-
-    # Eski "ovqat" yozuvlari Oziq-ovqat bo'lib qoladi
-    cur.execute("""
-        UPDATE transactions
-        SET category = '🍽️ Oziq-ovqat'
-        WHERE type = 'expense'
-        AND LOWER(description) LIKE '%ovqat%'
-    """)
-
-    conn.commit()
-
-    cur.close()
-    conn.close()
-
-
-def add_transaction(user_id, tx_type, amount, description, category):
-
-    conn = get_db()
-    cur = conn.cursor()
-
-    cur.execute("""
-        INSERT INTO transactions
-        (user_id, type, amount, description, category)
-        VALUES (%s, %s, %s, %s, %s)
-    """, (
-        user_id,
-        tx_type,
-        amount,
-        description,
-        category
-    ))
-
-    conn.commit()
-
-    cur.close()
-    conn.close()
-
-
-# =========================
-# CATEGORIES
-# =========================
-
-CATEGORIES = {
-    "market": "🛒 Bozor",
-    "food": "🍽️ Oziq-ovqat",
-    "transport": "🚗 Transport",
-    "home": "🏠 Uy-joy",
-    "shopping": "🛍 Xaridlar",
-    "cafe": "☕ Kafe",
-    "health": "💊 Sog'liq",
-    "phone": "📱 Aloqa",
-    "education": "📚 Ta'lim",
-    "credit": "💳 Kredit",
-    "other": "📦 Boshqa",
-}
-
-
-# =========================
-# CATEGORY DETECTION
-# =========================
-
 def detect_category(text):
-
     text = text.lower().strip()
 
-    # ==========================================
-    # 1. UY-JOYGA OID ANIQ IBORALAR
-    # AVVAL TEKSHIRILADI
-    # ==========================================
+    # =========================
+    # UY-JOY
+    # =========================
 
     home_words = [
         "kommunal",
@@ -239,26 +79,29 @@ def detect_category(text):
     ]
 
     if any(word in text for word in home_words):
-        return CATEGORIES["home"]
+        return "🏠 Uy-joy"
 
 
-    # ==========================================
-    # 2. FAQAT "OVQAT" → OZIQ-OVQAT
-    # ==========================================
+    # =========================
+    # OZIQ-OVQAT
+    # FAQAT OVQAT
+    # =========================
 
     if re.search(r"\bovqat\b", text):
-        return CATEGORIES["food"]
+        return "🍽️ Oziq-ovqat"
 
     if re.search(r"\boziq-ovqat\b", text):
-        return CATEGORIES["food"]
+        return "🍽️ Oziq-ovqat"
 
 
-    # ==========================================
-    # 3. BOZOR
-    # ==========================================
+    # =========================
+    # BOZOR
+    # =========================
 
     market_words = [
         "bozor",
+        "do'kon",
+        "dokon",
 
         "go'sht",
         "gosht",
@@ -327,12 +170,12 @@ def detect_category(text):
     ]
 
     if any(word in text for word in market_words):
-        return CATEGORIES["market"]
+        return "🛒 Bozor"
 
 
-    # ==========================================
-    # 4. TRANSPORT
-    # ==========================================
+    # =========================
+    # TRANSPORT
+    # =========================
 
     transport_words = [
         "gas",
@@ -353,12 +196,12 @@ def detect_category(text):
     ]
 
     if any(word in text for word in transport_words):
-        return CATEGORIES["transport"]
+        return "🚗 Transport"
 
 
-    # ==========================================
-    # 5. TA'LIM
-    # ==========================================
+    # =========================
+    # TA'LIM
+    # =========================
 
     education_words = [
         "kontrakt",
@@ -375,12 +218,12 @@ def detect_category(text):
     ]
 
     if any(word in text for word in education_words):
-        return CATEGORIES["education"]
+        return "📚 Ta'lim"
 
 
-    # ==========================================
-    # 6. KAFE
-    # ==========================================
+    # =========================
+    # KAFE
+    # =========================
 
     cafe_words = [
         "kafe",
@@ -394,12 +237,12 @@ def detect_category(text):
     ]
 
     if any(word in text for word in cafe_words):
-        return CATEGORIES["cafe"]
+        return "☕ Kafe"
 
 
-    # ==========================================
-    # 7. SOG'LIQ
-    # ==========================================
+    # =========================
+    # SOG'LIQ
+    # =========================
 
     health_words = [
         "dori",
@@ -413,12 +256,12 @@ def detect_category(text):
     ]
 
     if any(word in text for word in health_words):
-        return CATEGORIES["health"]
+        return "💊 Sog'liq"
 
 
-    # ==========================================
-    # 8. ALOQA
-    # ==========================================
+    # =========================
+    # ALOQA
+    # =========================
 
     phone_words = [
         "telefon",
@@ -430,12 +273,12 @@ def detect_category(text):
     ]
 
     if any(word in text for word in phone_words):
-        return CATEGORIES["phone"]
+        return "📱 Aloqa"
 
 
-    # ==========================================
-    # 9. KREDIT
-    # ==========================================
+    # =========================
+    # KREDIT
+    # =========================
 
     credit_words = [
         "kredit",
@@ -445,12 +288,12 @@ def detect_category(text):
     ]
 
     if any(word in text for word in credit_words):
-        return CATEGORIES["credit"]
+        return "💳 Kredit"
 
 
-    # ==========================================
-    # 10. XARIDLAR
-    # ==========================================
+    # =========================
+    # XARIDLAR
+    # =========================
 
     shopping_words = [
         "kiyim",
@@ -464,14 +307,99 @@ def detect_category(text):
     ]
 
     if any(word in text for word in shopping_words):
-        return CATEGORIES["shopping"]
+        return "🛍 Xaridlar"
+
+
+    return "📦 Boshqa"
+
+
+def init_db():
+
+    conn = get_db()
+    cur = conn.cursor()
+
+    cur.execute("""
+        CREATE TABLE IF NOT EXISTS transactions (
+            id SERIAL PRIMARY KEY,
+            user_id BIGINT NOT NULL,
+            type VARCHAR(20) NOT NULL,
+            amount NUMERIC(15,2) NOT NULL,
+            description TEXT NOT NULL,
+            category TEXT NOT NULL,
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+        )
+    """)
+
+    conn.commit()
 
 
     # ==========================================
-    # 11. BOSHQА
+    # ESKI XARAJATLARNI AVTOMATIK QAYTA
+    # KATEGORIYALASH
     # ==========================================
 
-    return CATEGORIES["other"]
+    cur.execute("""
+        SELECT id, description
+        FROM transactions
+        WHERE type = 'expense'
+    """)
+
+    old_rows = cur.fetchall()
+
+    changed = 0
+
+    for tx_id, description in old_rows:
+
+        new_category = detect_category(description)
+
+        cur.execute("""
+            UPDATE transactions
+            SET category = %s
+            WHERE id = %s
+        """, (
+            new_category,
+            tx_id
+        ))
+
+        changed += 1
+
+    conn.commit()
+
+    print(
+        f"ESKI XARAJATLAR TEKSHIRILDI: {changed} ta"
+    )
+
+    cur.close()
+    conn.close()
+
+
+def add_transaction(
+    user_id,
+    tx_type,
+    amount,
+    description,
+    category
+):
+
+    conn = get_db()
+    cur = conn.cursor()
+
+    cur.execute("""
+        INSERT INTO transactions
+        (user_id, type, amount, description, category)
+        VALUES (%s, %s, %s, %s, %s)
+    """, (
+        user_id,
+        tx_type,
+        amount,
+        description,
+        category
+    ))
+
+    conn.commit()
+
+    cur.close()
+    conn.close()
 
 
 # =========================
@@ -543,7 +471,10 @@ async def expense(update: Update, context: ContextTypes.DEFAULT_TYPE):
 # SAVE TRANSACTIONS
 # =========================
 
-async def save_transactions(update: Update, context: ContextTypes.DEFAULT_TYPE):
+async def save_transactions(
+    update: Update,
+    context: ContextTypes.DEFAULT_TYPE
+):
 
     text = update.message.text.strip()
 
@@ -588,6 +519,7 @@ async def save_transactions(update: Update, context: ContextTypes.DEFAULT_TYPE):
         except ValueError:
             continue
 
+
         if mode == "income":
 
             category = "💰 Kirim"
@@ -601,12 +533,15 @@ async def save_transactions(update: Update, context: ContextTypes.DEFAULT_TYPE):
             )
 
             saved.append(
-                f"💰 +{amount:,.0f} so'm — {description}"
+                f"💰 +{amount:,.0f} so'm — "
+                f"{description}"
             )
 
         else:
 
-            category = detect_category(description)
+            category = detect_category(
+                description
+            )
 
             add_transaction(
                 update.effective_user.id,
@@ -618,8 +553,10 @@ async def save_transactions(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
             saved.append(
                 f"{category}\n"
-                f"-{amount:,.0f} so'm — {description}"
+                f"-{amount:,.0f} so'm — "
+                f"{description}"
             )
+
 
     if not saved:
 
@@ -633,12 +570,16 @@ async def save_transactions(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
         return
 
+
     result = "✅ Saqlandi!\n\n"
 
     for item in saved:
+
         result += item + "\n\n"
 
-    result += f"📌 Jami: {len(saved)} ta yozuv"
+    result += (
+        f"📌 Jami: {len(saved)} ta yozuv"
+    )
 
     await update.message.reply_text(
         result,
@@ -652,7 +593,10 @@ async def save_transactions(update: Update, context: ContextTypes.DEFAULT_TYPE):
 # REPORT
 # =========================
 
-async def report(update: Update, context: ContextTypes.DEFAULT_TYPE):
+async def report(
+    update: Update,
+    context: ContextTypes.DEFAULT_TYPE
+):
 
     uid = update.effective_user.id
 
@@ -690,6 +634,7 @@ async def report(update: Update, context: ContextTypes.DEFAULT_TYPE):
             expense_total += amount
             categories[category] += amount
 
+
     balance = income_total - expense_total
 
     month = datetime.now().strftime("%Y-%m")
@@ -697,11 +642,15 @@ async def report(update: Update, context: ContextTypes.DEFAULT_TYPE):
     text = (
         "📊 OYLIK HISOBOT\n"
         f"📅 {month}\n\n"
-        f"💰 Kirim: {income_total:,.0f} so'm\n"
-        f"💸 Xarajat: {expense_total:,.0f} so'm\n"
-        f"💵 Qoldiq: {balance:,.0f} so'm\n\n"
+        f"💰 Kirim: "
+        f"{income_total:,.0f} so'm\n"
+        f"💸 Xarajat: "
+        f"{expense_total:,.0f} so'm\n"
+        f"💵 Qoldiq: "
+        f"{balance:,.0f} so'm\n\n"
         "📋 KATEGORIYALAR\n"
     )
+
 
     if categories:
 
@@ -715,6 +664,7 @@ async def report(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 f"{category}: "
                 f"{amount:,.0f} so'm\n"
             )
+
 
         top = max(
             categories,
@@ -731,6 +681,7 @@ async def report(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
         text += "Xarajat yo'q."
 
+
     await update.message.reply_text(
         text,
         reply_markup=menu()
@@ -741,7 +692,10 @@ async def report(update: Update, context: ContextTypes.DEFAULT_TYPE):
 # HISTORY
 # =========================
 
-async def history(update: Update, context: ContextTypes.DEFAULT_TYPE):
+async def history(
+    update: Update,
+    context: ContextTypes.DEFAULT_TYPE
+):
 
     uid = update.effective_user.id
 
@@ -761,6 +715,7 @@ async def history(update: Update, context: ContextTypes.DEFAULT_TYPE):
     cur.close()
     conn.close()
 
+
     if not rows:
 
         await update.message.reply_text(
@@ -769,6 +724,7 @@ async def history(update: Update, context: ContextTypes.DEFAULT_TYPE):
         )
 
         return
+
 
     grouped = defaultdict(list)
 
@@ -782,7 +738,9 @@ async def history(update: Update, context: ContextTypes.DEFAULT_TYPE):
             )
         )
 
+
     text = "📜 XARAJATLAR TARIXI\n\n"
+
 
     for category, items in grouped.items():
 
@@ -797,6 +755,7 @@ async def history(update: Update, context: ContextTypes.DEFAULT_TYPE):
             f"━━━━━━━━━━━━━━\n"
         )
 
+
         for amount, description, created_at in items:
 
             text += (
@@ -806,10 +765,12 @@ async def history(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 f"{created_at.strftime('%Y-%m-%d %H:%M')}\n"
             )
 
+
         text += (
             f"Jami: "
             f"{category_total:,.0f} so'm\n\n"
         )
+
 
     total = sum(
         amount
@@ -817,13 +778,16 @@ async def history(update: Update, context: ContextTypes.DEFAULT_TYPE):
         for amount, description, created_at in items
     )
 
+
     text += (
         "━━━━━━━━━━━━━━\n"
         f"💸 UMUMIY XARAJAT: "
         f"{total:,.0f} so'm"
     )
 
+
     max_length = 4000
+
 
     if len(text) <= max_length:
 
@@ -848,10 +812,13 @@ async def history(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 cut = max_length
 
             parts.append(text[:cut])
+
             text = text[cut:].lstrip()
+
 
         if text:
             parts.append(text)
+
 
         for i, part in enumerate(parts):
 
@@ -864,14 +831,19 @@ async def history(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
             else:
 
-                await update.message.reply_text(part)
+                await update.message.reply_text(
+                    part
+                )
 
 
 # =========================
 # DELETE LAST
 # =========================
 
-async def delete_last(update: Update, context: ContextTypes.DEFAULT_TYPE):
+async def delete_last(
+    update: Update,
+    context: ContextTypes.DEFAULT_TYPE
+):
 
     uid = update.effective_user.id
 
@@ -888,6 +860,7 @@ async def delete_last(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     row = cur.fetchone()
 
+
     if not row:
 
         cur.close()
@@ -900,7 +873,9 @@ async def delete_last(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
         return
 
+
     tx_id, tx_type, amount, description = row
+
 
     cur.execute(
         "DELETE FROM transactions WHERE id = %s",
@@ -911,6 +886,7 @@ async def delete_last(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     cur.close()
     conn.close()
+
 
     await update.message.reply_text(
         f"✅ Oxirgi yozuv o'chirildi.\n\n"
@@ -931,20 +907,41 @@ async def message_handler(
 
     text = update.message.text
 
+
     if text == "💰 Kirim":
-        return await income(update, context)
+        return await income(
+            update,
+            context
+        )
+
 
     if text == "💸 Xarajat":
-        return await expense(update, context)
+        return await expense(
+            update,
+            context
+        )
+
 
     if text == "📊 Hisobot":
-        return await report(update, context)
+        return await report(
+            update,
+            context
+        )
+
 
     if text == "📜 Tarix":
-        return await history(update, context)
+        return await history(
+            update,
+            context
+        )
+
 
     if text == "🗑 O'chirish":
-        return await delete_last(update, context)
+        return await delete_last(
+            update,
+            context
+        )
+
 
     if context.user_data.get("mode") in [
         "income",
@@ -956,8 +953,10 @@ async def message_handler(
             context
         )
 
+
     await update.message.reply_text(
-        "Iltimos, menyudan tanlang yoki /start bosing.",
+        "Iltimos, menyudan tanlang yoki "
+        "/start bosing.",
         reply_markup=menu()
     )
 
@@ -973,25 +972,40 @@ def main():
             "BOT_TOKEN topilmadi!"
         )
 
+
     if not DATABASE_URL:
         raise ValueError(
             "DATABASE_URL topilmadi!"
         )
+
 
     threading.Thread(
         target=run_health_server,
         daemon=True
     ).start()
 
+
     init_db()
+
 
     print("BOT ISHGA TUSHDI")
 
-    app = Application.builder().token(TOKEN).build()
+
+    app = (
+        Application
+        .builder()
+        .token(TOKEN)
+        .build()
+    )
+
 
     app.add_handler(
-        CommandHandler("start", start)
+        CommandHandler(
+            "start",
+            start
+        )
     )
+
 
     app.add_handler(
         MessageHandler(
@@ -999,6 +1013,7 @@ def main():
             message_handler
         )
     )
+
 
     app.run_polling()
 
