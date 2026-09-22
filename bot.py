@@ -6,11 +6,17 @@ from collections import defaultdict
 from datetime import datetime
 
 import psycopg2
-from telegram import Update, ReplyKeyboardMarkup
+from telegram import (
+    Update,
+    ReplyKeyboardMarkup,
+    InlineKeyboardMarkup,
+    InlineKeyboardButton,
+)
 from telegram.ext import (
     Application,
     CommandHandler,
     MessageHandler,
+    CallbackQueryHandler,
     ContextTypes,
     filters,
 )
@@ -72,7 +78,8 @@ def init_db():
     conn.commit()
 
     # =====================================================
-    # ESKI XARAJATLARNI BOZORGA KO'CHIRISH
+    # ESKI BOSHQA KATEGORIYASIDAGI BOZOR XARAJATLARINI
+    # 🛒 BOZORGA KO'CHIRISH
     # =====================================================
 
     cur.execute("""
@@ -96,7 +103,7 @@ def init_db():
 
               OR LOWER(description) LIKE '%tovuq%'
               OR LOWER(description) LIKE '%baliq%'
-
+              OR LOWER(description) LIKE '%suv%'
               OR LOWER(description) LIKE '%non%'
               OR LOWER(description) LIKE '%sut%'
               OR LOWER(description) LIKE '%qatiq%'
@@ -152,8 +159,6 @@ def init_db():
               OR LOWER(description) LIKE '%konserva%'
               OR LOWER(description) LIKE '%ichimlik%'
               OR LOWER(description) LIKE '%choy%'
-
-              OR LOWER(description) LIKE '%suv%'
           )
 
           -- "suv to'lovi" bozor emas
@@ -162,10 +167,10 @@ def init_db():
 
     conn.commit()
 
-    print("✅ ESKI BOZOR XARAJATLARI 🛒 BOZORGA O'TKAZILDI")
-
     cur.close()
     conn.close()
+
+    print("✅ ESKI BOZOR XARAJATLARI 🛒 BOZORGA O'TKAZILDI")
 
 
 # =========================================================
@@ -203,7 +208,6 @@ def detect_category(text):
 
     # -----------------------------------------------------
     # OZIq-OVQAT
-    # Faqat "ovqat" yoki "oziq-ovqat"
     # -----------------------------------------------------
 
     if re.search(r"\bovqat\b", text):
@@ -424,10 +428,6 @@ def detect_category(text):
     if any(word in text for word in shopping_words):
         return "🛍 Xaridlar"
 
-    # -----------------------------------------------------
-    # BOSHQA
-    # -----------------------------------------------------
-
     return "📦 Boshqa"
 
 
@@ -478,6 +478,106 @@ def menu():
         ],
         resize_keyboard=True
     )
+
+
+# =========================================================
+# MONTH HELPERS
+# =========================================================
+
+MONTH_NAMES = {
+    1: "Yanvar",
+    2: "Fevral",
+    3: "Mart",
+    4: "Aprel",
+    5: "May",
+    6: "Iyun",
+    7: "Iyul",
+    8: "Avgust",
+    9: "Sentabr",
+    10: "Oktabr",
+    11: "Noyabr",
+    12: "Dekabr",
+}
+
+
+def month_label(month_key):
+
+    year, month = month_key.split("-")
+
+    return f"{MONTH_NAMES[int(month)]} {year}"
+
+
+def get_available_months(user_id):
+
+    conn = get_db()
+    cur = conn.cursor()
+
+    cur.execute("""
+        SELECT DISTINCT TO_CHAR(created_at, 'YYYY-MM') AS month_key
+        FROM transactions
+        WHERE user_id = %s
+        ORDER BY month_key DESC
+    """, (user_id,))
+
+    rows = cur.fetchall()
+
+    cur.close()
+    conn.close()
+
+    months = [row[0] for row in rows]
+
+    current_month = datetime.now().strftime("%Y-%m")
+
+    if current_month not in months:
+        months.insert(0, current_month)
+
+    return sorted(set(months), reverse=True)
+
+
+def month_keyboard(mode, months):
+
+    buttons = []
+
+    for month_key in months:
+
+        buttons.append(
+            InlineKeyboardButton(
+                month_label(month_key),
+                callback_data=f"{mode}:{month_key}"
+            )
+        )
+
+    rows = []
+
+    for i in range(0, len(buttons), 2):
+        rows.append(buttons[i:i + 2])
+
+    rows.append([
+        InlineKeyboardButton(
+            "❌ Yopish",
+            callback_data="close_months"
+        )
+    ])
+
+    return InlineKeyboardMarkup(rows)
+
+
+def month_action_keyboard(mode, month_key):
+
+    return InlineKeyboardMarkup([
+        [
+            InlineKeyboardButton(
+                "📅 Boshqa oy",
+                callback_data=f"choose:{mode}"
+            )
+        ],
+        [
+            InlineKeyboardButton(
+                "❌ Yopish",
+                callback_data="close_months"
+            )
+        ]
+    ])
 
 
 # =========================================================
@@ -536,14 +636,12 @@ async def expense(update: Update, context: ContextTypes.DEFAULT_TYPE):
 async def save_transactions(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     text = update.message.text.strip()
-
     mode = context.user_data.get("mode")
 
     if mode not in ["income", "expense"]:
         return
 
     lines = text.splitlines()
-
     saved = []
 
     for line in lines:
@@ -559,7 +657,6 @@ async def save_transactions(update: Update, context: ContextTypes.DEFAULT_TYPE):
             continue
 
         amount_text = match.group(1)
-
         description = match.group(2).strip()
 
         try:
@@ -576,10 +673,6 @@ async def save_transactions(update: Update, context: ContextTypes.DEFAULT_TYPE):
         except ValueError:
             continue
 
-        # -------------------------------------------------
-        # KIRIM
-        # -------------------------------------------------
-
         if mode == "income":
 
             category = "💰 Kirim"
@@ -595,10 +688,6 @@ async def save_transactions(update: Update, context: ContextTypes.DEFAULT_TYPE):
             saved.append(
                 f"💰 +{amount:,.0f} so'm — {description}"
             )
-
-        # -------------------------------------------------
-        # XARAJAT
-        # -------------------------------------------------
 
         else:
 
@@ -617,10 +706,6 @@ async def save_transactions(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 f"-{amount:,.0f} so'm — {description}"
             )
 
-    # -----------------------------------------------------
-    # HECH NARSA TOPILMADI
-    # -----------------------------------------------------
-
     if not saved:
 
         await update.message.reply_text(
@@ -633,14 +718,9 @@ async def save_transactions(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
         return
 
-    # -----------------------------------------------------
-    # NATIJA
-    # -----------------------------------------------------
-
     result = "✅ Saqlandi!\n\n"
 
     for item in saved:
-
         result += item + "\n\n"
 
     result += f"📌 Jami: {len(saved)} ta yozuv"
@@ -654,12 +734,34 @@ async def save_transactions(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 
 # =========================================================
-# MONTHLY REPORT
+# REPORT - MONTH SELECTOR
 # =========================================================
 
 async def report(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     uid = update.effective_user.id
+
+    months = get_available_months(uid)
+
+    await update.message.reply_text(
+        "📊 HISOBOT\n\n"
+        "Qaysi oy hisobotini ko'rmoqchisiz?",
+        reply_markup=month_keyboard(
+            "report",
+            months
+        )
+    )
+
+
+# =========================================================
+# REPORT - ONE MONTH
+# =========================================================
+
+async def show_month_report(
+    query,
+    user_id,
+    month_key
+):
 
     conn = get_db()
     cur = conn.cursor()
@@ -668,9 +770,12 @@ async def report(update: Update, context: ContextTypes.DEFAULT_TYPE):
         SELECT type, amount, category
         FROM transactions
         WHERE user_id = %s
-          AND DATE_TRUNC('month', created_at)
-              = DATE_TRUNC('month', CURRENT_DATE)
-    """, (uid,))
+          AND TO_CHAR(created_at, 'YYYY-MM') = %s
+        ORDER BY created_at ASC
+    """, (
+        user_id,
+        month_key
+    ))
 
     rows = cur.fetchall()
 
@@ -697,11 +802,8 @@ async def report(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     balance = income_total - expense_total
 
-    month = datetime.now().strftime("%Y-%m")
-
     text = (
-        "📊 OYLIK HISOBOT\n"
-        f"📅 {month}\n\n"
+        f"📊 {month_label(month_key).upper()}\n\n"
         f"💰 Kirim: {income_total:,.0f} so'm\n"
         f"💸 Xarajat: {expense_total:,.0f} so'm\n"
         f"💵 Qoldiq: {balance:,.0f} so'm\n\n"
@@ -721,34 +823,48 @@ async def report(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 f"{amount:,.0f} so'm\n"
             )
 
-        top = max(
-            categories,
-            key=categories.get
-        )
-
-        text += (
-            f"\n🏆 Eng ko'p xarajat:\n"
-            f"{top} — "
-            f"{categories[top]:,.0f} so'm"
-        )
-
     else:
 
-        text += "Xarajat yo'q."
+        text += "Bu oyda xarajat yo'q.\n"
 
-    await update.message.reply_text(
+    await query.edit_message_text(
         text,
-        reply_markup=menu()
+        reply_markup=month_action_keyboard(
+            "report",
+            month_key
+        )
     )
 
 
 # =========================================================
-# HISTORY
+# HISTORY - MONTH SELECTOR
 # =========================================================
 
 async def history(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     uid = update.effective_user.id
+
+    months = get_available_months(uid)
+
+    await update.message.reply_text(
+        "📜 TARIX\n\n"
+        "Qaysi oy xarajatlarini ko'rmoqchisiz?",
+        reply_markup=month_keyboard(
+            "history",
+            months
+        )
+    )
+
+
+# =========================================================
+# HISTORY - ONE MONTH
+# =========================================================
+
+async def show_month_history(
+    query,
+    user_id,
+    month_key
+):
 
     conn = get_db()
     cur = conn.cursor()
@@ -758,8 +874,12 @@ async def history(update: Update, context: ContextTypes.DEFAULT_TYPE):
         FROM transactions
         WHERE user_id = %s
           AND type = 'expense'
+          AND TO_CHAR(created_at, 'YYYY-MM') = %s
         ORDER BY category, created_at DESC
-    """, (uid,))
+    """, (
+        user_id,
+        month_key
+    ))
 
     rows = cur.fetchall()
 
@@ -768,9 +888,17 @@ async def history(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     if not rows:
 
-        await update.message.reply_text(
-            "📜 Xarajatlar tarixi bo'sh.",
-            reply_markup=menu()
+        text = (
+            f"📜 {month_label(month_key).upper()}\n\n"
+            "Bu oyda xarajat yo'q."
+        )
+
+        await query.edit_message_text(
+            text,
+            reply_markup=month_action_keyboard(
+                "history",
+                month_key
+            )
         )
 
         return
@@ -787,7 +915,10 @@ async def history(update: Update, context: ContextTypes.DEFAULT_TYPE):
             )
         )
 
-    text = "📜 XARAJATLAR TARIXI\n\n"
+    text = (
+        f"📜 XARAJATLAR — "
+        f"{month_label(month_key).upper()}\n\n"
+    )
 
     for category, items in grouped.items():
 
@@ -820,59 +951,34 @@ async def history(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     text += (
         "━━━━━━━━━━━━━━\n"
-        f"💸 UMUMIY XARAJAT: {total:,.0f} so'm"
+        f"💸 UMUMIY: {total:,.0f} so'm"
     )
 
-    max_length = 4000
+    if len(text) > 3900:
 
-    if len(text) <= max_length:
-
-        await update.message.reply_text(
-            text,
-            reply_markup=menu()
+        text = (
+            text[:3900]
+            + "\n\n"
+            "… Tarix juda uzun bo'ldi."
         )
 
-    else:
-
-        parts = []
-
-        while len(text) > max_length:
-
-            cut = text.rfind(
-                "\n",
-                0,
-                max_length
-            )
-
-            if cut == -1:
-                cut = max_length
-
-            parts.append(text[:cut])
-
-            text = text[cut:].lstrip()
-
-        if text:
-            parts.append(text)
-
-        for i, part in enumerate(parts):
-
-            if i == len(parts) - 1:
-
-                await update.message.reply_text(
-                    part,
-                    reply_markup=menu()
-                )
-
-            else:
-
-                await update.message.reply_text(part)
+    await query.edit_message_text(
+        text,
+        reply_markup=month_action_keyboard(
+            "history",
+            month_key
+        )
+    )
 
 
 # =========================================================
 # DELETE LAST
 # =========================================================
 
-async def delete_last(update: Update, context: ContextTypes.DEFAULT_TYPE):
+async def delete_last(
+    update: Update,
+    context: ContextTypes.DEFAULT_TYPE
+):
 
     uid = update.effective_user.id
 
@@ -922,27 +1028,173 @@ async def delete_last(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 
 # =========================================================
+# CALLBACKS
+# =========================================================
+
+async def callback_handler(
+    update: Update,
+    context: ContextTypes.DEFAULT_TYPE
+):
+
+    query = update.callback_query
+
+    await query.answer()
+
+    data = query.data
+
+    user_id = update.effective_user.id
+
+    # -----------------------------------------------------
+    # CLOSE
+    # -----------------------------------------------------
+
+    if data == "close_months":
+
+        await query.edit_message_text(
+            "✅ Yopildi.\n\n"
+            "Kerakli bo'limni menyudan tanlang."
+        )
+
+        return
+
+    # -----------------------------------------------------
+    # CHOOSE ANOTHER REPORT MONTH
+    # -----------------------------------------------------
+
+    if data == "choose:report":
+
+        months = get_available_months(user_id)
+
+        await query.edit_message_text(
+            "📊 HISOBOT\n\n"
+            "Qaysi oy hisobotini ko'rmoqchisiz?",
+            reply_markup=month_keyboard(
+                "report",
+                months
+            )
+        )
+
+        return
+
+    # -----------------------------------------------------
+    # CHOOSE ANOTHER HISTORY MONTH
+    # -----------------------------------------------------
+
+    if data == "choose:history":
+
+        months = get_available_months(user_id)
+
+        await query.edit_message_text(
+            "📜 TARIX\n\n"
+            "Qaysi oy xarajatlarini ko'rmoqchisiz?",
+            reply_markup=month_keyboard(
+                "history",
+                months
+            )
+        )
+
+        return
+
+    # -----------------------------------------------------
+    # REPORT MONTH
+    # -----------------------------------------------------
+
+    if data.startswith("report:"):
+
+        month_key = data.split(":", 1)[1]
+
+        if not re.fullmatch(
+            r"\d{4}-\d{2}",
+            month_key
+        ):
+
+            await query.edit_message_text(
+                "❌ Oy formati noto'g'ri."
+            )
+
+            return
+
+        await show_month_report(
+            query,
+            user_id,
+            month_key
+        )
+
+        return
+
+    # -----------------------------------------------------
+    # HISTORY MONTH
+    # -----------------------------------------------------
+
+    if data.startswith("history:"):
+
+        month_key = data.split(":", 1)[1]
+
+        if not re.fullmatch(
+            r"\d{4}-\d{2}",
+            month_key
+        ):
+
+            await query.edit_message_text(
+                "❌ Oy formati noto'g'ri."
+            )
+
+            return
+
+        await show_month_history(
+            query,
+            user_id,
+            month_key
+        )
+
+        return
+
+
+# =========================================================
 # MESSAGE HANDLER
 # =========================================================
 
-async def message_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
+async def message_handler(
+    update: Update,
+    context: ContextTypes.DEFAULT_TYPE
+):
 
     text = update.message.text
 
     if text == "💰 Kirim":
-        return await income(update, context)
+
+        return await income(
+            update,
+            context
+        )
 
     if text == "💸 Xarajat":
-        return await expense(update, context)
+
+        return await expense(
+            update,
+            context
+        )
 
     if text == "📊 Hisobot":
-        return await report(update, context)
+
+        return await report(
+            update,
+            context
+        )
 
     if text == "📜 Tarix":
-        return await history(update, context)
+
+        return await history(
+            update,
+            context
+        )
 
     if text == "🗑 O'chirish":
-        return await delete_last(update, context)
+
+        return await delete_last(
+            update,
+            context
+        )
 
     if context.user_data.get("mode") in [
         "income",
@@ -967,27 +1219,26 @@ async def message_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
 def main():
 
     if not TOKEN:
+
         raise ValueError(
             "BOT_TOKEN topilmadi!"
         )
 
     if not DATABASE_URL:
+
         raise ValueError(
             "DATABASE_URL topilmadi!"
         )
 
-    # Render health check server
     threading.Thread(
         target=run_health_server,
         daemon=True
     ).start()
 
-    # Database
     init_db()
 
     print("✅ BOT ISHGA TUSHDI")
 
-    # Telegram bot
     app = (
         Application
         .builder()
@@ -995,7 +1246,6 @@ def main():
         .build()
     )
 
-    # Commands
     app.add_handler(
         CommandHandler(
             "start",
@@ -1003,7 +1253,12 @@ def main():
         )
     )
 
-    # Messages
+    app.add_handler(
+        CallbackQueryHandler(
+            callback_handler
+        )
+    )
+
     app.add_handler(
         MessageHandler(
             filters.TEXT & ~filters.COMMAND,
@@ -1011,7 +1266,6 @@ def main():
         )
     )
 
-    # Start bot
     app.run_polling()
 
 
